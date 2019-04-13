@@ -1,2 +1,6 @@
+# C
 *.a
 *.o
+
+# VSCODE
+.vscode/

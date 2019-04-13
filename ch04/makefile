@@ -1,6 +1,6 @@
 include ../makefile.inc
 
-BIN = tee
+BIN = tee cp
 
 all: ${BIN}
 

@@ -7,6 +7,10 @@ extern "C" {
 
 extern void fatal(const char *message);
 
+extern void fatalWithError(const char *message);
+
+extern void fatalVardic(const char *restrict format, ...);
+
 #ifdef __cplusplus
 }
 #endif

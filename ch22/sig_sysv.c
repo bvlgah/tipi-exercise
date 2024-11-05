@@ -4,22 +4,42 @@
 
 #include "sig_sysv.h"
 
-static pthread_mutex_t sigsetLock = PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP;
+typedef void (*posix_sighandler_t)(int);
+
+static pthread_mutex_t sigsetLock = PTHREAD_MUTEX_INITIALIZER;
+
+static sysv_sighandler_t convertSignalHandler(posix_sighandler_t handler) {
+  if (handler == SIG_DFL)
+    return SYSV_SIG_DFL;
+  else if (handler == SIG_IGN)
+    return SYSV_SIG_IGN;
+  else
+    return handler;
+}
 
 sysv_sighandler_t sysv_sigset(int sig, sysv_sighandler_t newHandler) {
+  sigset_t newProcMask;
   sigset_t oldProcMask;
   sysv_sighandler_t oldHandler;
   struct sigaction oldSigAction;
 
-  pthread_mutext_lock(&sigsetLock);
+  pthread_mutex_lock(&sigsetLock);
+
+  sigemptyset(&newProcMask);
+  if (sigaddset(&newProcMask, sig))
+    goto onError;
 
   if (newHandler == SYSV_SIG_HOLD) {
-    sigset_t blocking;
-    sigemptyset(&blocking);
-    if (sigaddset(&blocking, sig))
+    if (sigprocmask(SIG_BLOCK, &newProcMask, &oldProcMask))
       goto onError;
-    if (sigprocmask(SIG_BLOCK, &blocking, &oldProcMask))
-      goto onError;
+    if (sigismember(&oldProcMask, sig)) {
+      // If `sig` is already being blocked.
+      // We don't need to check whether `sigismember()` returns -1 when `sig` is
+      // not a valid signal number, because the very first call to `sigaddset()`
+      // has already performed this check.
+      oldHandler = SYSV_SIG_HOLD;
+      goto onSuccess;
+    }
     if (sigaction(sig, NULL, &oldSigAction))
       goto onError;
   } else {
@@ -34,17 +54,23 @@ sysv_sighandler_t sysv_sigset(int sig, sysv_sighandler_t newHandler) {
     else
       newSigAction.sa_handler = newHandler;
 
-    if (sigprocmask(SIG_BLOCK, NULL, &oldProcMask))
+    if (sigprocmask(SIG_UNBLOCK, &newProcMask, &oldProcMask))
       goto onError;
     if (sigaction(sig, &newSigAction, &oldSigAction))
       goto onError;
+    if (sigismember(&oldProcMask, sig)) {
+      // If `sig` is already being blocked.
+      // We don't need to check whether `sigismember()` returns -1 when `sig` is
+      // not a valid signal number, because the very first call to `sigaddset()`
+      // has already performed this check.
+      oldHandler = SYSV_SIG_HOLD;
+      goto onSuccess;
+    }
   }
 
-  if (sigismember(&oldProcMask, sig))
-    oldHandler = SYSV_SIG_HOLD;
-  else
-    oldHandler = oldSigAction.sa_handler;
+  oldHandler = convertSignalHandler(oldSigAction.sa_handler);
 
+onSuccess:
   pthread_mutex_unlock(&sigsetLock);
   return oldHandler;
 
@@ -59,10 +85,7 @@ int sysv_sighold(int sig) {
   if (sigaddset(&blocking, sig))
     return -1;
 
-  if (sigprocmask(SIG_BLOCK, &blocking, NULL))
-    return -1;
-  else
-    return 0;
+  return sigprocmask(SIG_BLOCK, &blocking, NULL);
 }
 
 int sysv_sigrelse(int sig) {
@@ -71,10 +94,7 @@ int sysv_sigrelse(int sig) {
   if (sigaddset(&blocking, sig))
     return -1;
 
-  if (sigprocmask(SIG_UNBLOCK, &blocking, NULL))
-    return -1;
-  else
-    return 0;
+  return sigprocmask(SIG_UNBLOCK, &blocking, NULL);
 }
 
 int sysv_sigignore(int sig) {
@@ -83,8 +103,5 @@ int sysv_sigignore(int sig) {
   sigemptyset(&newSigAction.sa_mask);
   newSigAction.sa_handler = SIG_IGN;
 
-  if (sigaction(sig, &newSigAction, NULL))
-    return -1;
-  else
-    return 0;
+  return sigaction(sig, &newSigAction, NULL);
 }

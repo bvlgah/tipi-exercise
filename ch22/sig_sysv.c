@@ -105,3 +105,12 @@ int sysv_sigignore(int sig) {
 
   return sigaction(sig, &newSigAction, NULL);
 }
+
+int sysv_sigpause(int sig) {
+  sigset_t waitFor;
+  sigemptyset(&waitFor);
+  if (sigaddset(&waitFor, sig))
+    return -1;
+
+  return sigsuspend(&waitFor);
+}

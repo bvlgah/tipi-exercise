@@ -38,6 +38,11 @@ extern int sysv_sigrelse(int sig);
 // the calling process's disposition for `sig` to `SYSV_SIG_IGN`.
 extern int sysv_sigignore(int sig);
 
+// This function reimplements the System V signal API `sigpause()`, which
+// temporarily removes `sig` from the calling process's signal mask and waits
+// for signal until the function returns.
+extern int sysv_sigpause(int sig);
+
 #ifdef __cplusplus
 }
 #endif // __cplusplus
